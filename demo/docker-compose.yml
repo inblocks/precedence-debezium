@@ -1,0 +1,70 @@
+version: '2'
+
+services:
+
+  zookeeper:
+    container_name: zookeeper
+    image: debezium/zookeeper
+    ports:
+    - "2181:2181"
+    - "2888:2888"
+    - "3888:3888"
+
+  kafka:
+    container_name: kafka
+    image: wurstmeister/kafka
+    ports:
+    - "9093:9093"
+    environment:
+    - "KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181"
+    - "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT"
+    - "KAFKA_LISTENERS=INSIDE://:9092,OUTSIDE://:9093"
+    - "KAFKA_ADVERTISED_LISTENERS=INSIDE://:9092,OUTSIDE://localhost:9093"
+    - "KAFKA_INTER_BROKER_LISTENER_NAME=INSIDE"
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+
+  redis:
+    container_name: redis
+    image: redis:alpine
+    command: redis-server --appendonly yes --appendfsync always
+    ports:
+    - "6379:6379"
+
+  debezium:
+    container_name: debezium
+    image: debezium/connect
+    ports:
+    - "8083:8083"
+    environment:
+    - "BOOTSTRAP_SERVERS=kafka:9092"
+    - "GROUP_ID=debezium-dbserver1.inventory"
+    - "CONFIG_STORAGE_TOPIC=debezium_connect_configs-dbserver1.inventory"
+    - "OFFSET_STORAGE_TOPIC=debezium_connect_offsets-dbserver1.inventory"
+    - "STATUS_STORAGE_TOPIC=debezium_connect_statuses-dbserver1.inventory"
+
+  precedence:
+    container_name: precedence
+    image: inblocks/precedence
+    command: --redis redis:6379
+    ports:
+    - "9000:80"
+
+  precedence-debezium:
+    container_name: precedence-debezium
+    image: inblocks/precedence-debezium
+    environment:
+    - "APPLICATION_ID=precedence-dbserver1-inventory"
+    - "BOOTSTRAP_SERVERS=kafka:9092"
+    - "INPUT_TOPIC_PATTERN=dbserver1\\.inventory\\..*"
+    - "PRECEDENCE_API=http://precedence"
+
+  init:
+    container_name: init
+    image: docker
+    command: /init.sh
+    tty: true
+    volumes:
+    - "/var/run/docker.sock:/var/run/docker.sock"
+    - "$PWD/${PRECEDENCE_DEBEZIUM_CONFIG}:/config.json"
+    - "$PWD/docker-compose.init.sh:/init.sh"
