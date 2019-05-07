@@ -44,9 +44,12 @@ public class Debezium {
         return JSON_PARSER.parse(new BufferedReader(new InputStreamReader(inputStream))).getAsJsonObject();
     }
 
-    private static Response post(String baseUrl, String id, String chain, JsonElement data) throws Exception {
+    private static Response post(String baseUrl, String id, String chain, JsonElement data, boolean store) throws Exception {
         byte[] bytes = data.toString().getBytes();
-        String url = baseUrl + "/records?id=" + id + "&hash=" + sha256(bytes) + "&chain=" + URLEncoder.encode(chain, "utf-8");
+        String url = baseUrl + "/records?id=" + id +
+                "&store=" + store +
+                "&hash=" + sha256(bytes) +
+                "&chain=" + URLEncoder.encode(chain, "utf-8");
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
         connection.setRequestMethod("POST");
         connection.setRequestProperty("content-type", "application/octet-stream");
@@ -63,24 +66,26 @@ public class Debezium {
     }
 
     public static void main(String[] args) {
-        String applicationId = System.getenv("APPLICATION_ID");
-        String bootstrapServers = System.getenv("BOOTSTRAP_SERVERS");
-        String inputTopicRegex = System.getenv("INPUT_TOPIC_PATTERN");
-        String precedenceApi = System.getenv("PRECEDENCE_API");
-        if (bootstrapServers == null || applicationId == null || inputTopicRegex == null || precedenceApi == null) {
+        String api = System.getenv("PRECEDENCE_API");
+        String applicationId = System.getenv("PRECEDENCE_APPLICATION_ID");
+        String bootstrapServers = System.getenv("PRECEDENCE_BOOTSTRAP_SERVERS");
+        String inputTopicRegex = System.getenv("PRECEDENCE_INPUT_TOPIC_PATTERN");
+        boolean store = "true".equals(System.getenv("PRECEDENCE_STORE"));
+        if (bootstrapServers == null || applicationId == null || inputTopicRegex == null || api == null) {
             System.err.println("The following environment variables must be defined:\n" +
-                    "APPLICATION_ID\n" +
-                    "BOOTSTRAP_SERVERS\n" +
-                    "INPUT_TOPIC_PATTERN\n" +
-                    "PRECEDENCE_API");
+                    "PRECEDENCE_API\n" +
+                    "PRECEDENCE_APPLICATION_ID\n" +
+                    "PRECEDENCE_BOOTSTRAP_SERVERS\n" +
+                    "PRECEDENCE_INPUT_TOPIC_PATTERN\n");
             System.exit(1);
         }
 
         LOGGER.info("Environment variables:\n" +
-                "\tAPPLICATION_ID: " + applicationId + "\n" +
-                "\tBOOTSTRAP_SERVERS: " + bootstrapServers + "\n" +
-                "\tINPUT_TOPIC_PATTERN: " + inputTopicRegex + "\n" +
-                "\tPRECEDENCE_API: " + precedenceApi + "\n");
+                "\tPRECEDENCE_API: " + api + "\n" +
+                "\tPRECEDENCE_APPLICATION_ID: " + applicationId + "\n" +
+                "\tPRECEDENCE_BOOTSTRAP_SERVERS: " + bootstrapServers + "\n" +
+                "\tPRECEDENCE_INPUT_TOPIC_PATTERN: " + inputTopicRegex + "\n" +
+                "\tPRECEDENCE_STORE: " + store + "\n");
 
         StreamsBuilder streamsBuilder = new StreamsBuilder();
         streamsBuilder.stream(Pattern.compile(inputTopicRegex)).filter((key, value) -> value != null).foreach((key, value) -> {
@@ -102,7 +107,7 @@ public class Debezium {
             JsonElement data = after.isJsonNull() ? JsonNull.INSTANCE : after;
             while (true) {
                 try {
-                    Response response = post(precedenceApi, id, chain, data);
+                    Response response = post(api, id, chain, data, store);
                     if (response.code == 201) {
                         LOGGER.info(String.format("CREATED id:%s(%s) chain:%s",
                                 response.body.getAsJsonObject("data").getAsJsonObject("provable").get("id").getAsString(),

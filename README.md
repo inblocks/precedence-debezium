@@ -17,10 +17,11 @@ This repository contains the data processing software to convert and push the da
 ```bash
 docker pull inblocks/precedence-debezium
 docker run --rm \
-    -e APPLICATION_ID=precedence-dbserver1-inventory \
-    -e BOOTSTRAP_SERVERS=kafka:9093 \
-    -e INPUT_TOPIC_PATTERN='dbserver1\.inventory\..*' \
-    -e PRECEDENCE_API=http://precedence \
+    -e PRECEDENCE_API=http://localhost:9000 \
+    -e PRECEDENCE_APPLICATION_ID=precedence-dbserver1-inventory \
+    -e PRECEDENCE_BOOTSTRAP_SERVERS=kafka:9093 \
+    -e PRECEDENCE_INPUT_TOPIC_PATTERN='dbserver1\.inventory\..*' \
+    -e PRECEDENCE_STORE=true \
     inblocks/precedence-debezium
 ```
 
@@ -30,10 +31,11 @@ docker run --rm \
 # Maven build
 mvn package
 
-export APPLICATION_ID=precedence-dbserver1-inventory
-export BOOTSTRAP_SERVERS=kafka:9093
-export INPUT_TOPIC_PATTERN='dbserver1\.inventory\..*'
 export PRECEDENCE_API=http://localhost:9000
+export PRECEDENCE_APPLICATION_ID=precedence-dbserver1-inventory
+export PRECEDENCE_BOOTSTRAP_SERVERS=kafka:9093
+export PRECEDENCE_INPUT_TOPIC_PATTERN='dbserver1\.inventory\..*'
+export PRECEDENCE_STORE=true
 
 java -cp ./target/debezium.jar io.inblocks.precedence.Debezium
 ```
@@ -43,5 +45,5 @@ java -cp ./target/debezium.jar io.inblocks.precedence.Debezium
 # Ongoing developments
 
 - reload topic list every minutes
-- **_precedence_** REST API authentication
+- **_inBlocks precedence_** REST API authentication (SaaS)
 - **_precedence_** Java client (dedicated project)
