@@ -2,70 +2,85 @@ version: '2'
 
 services:
 
+  init:
+    container_name: init
+    image: alpine
+    command: /init.sh
+    tty: true
+    volumes:
+      - "$PWD/mysql.json:/config.json"
+      - "$PWD/init.sh:/init.sh"
+
+  mysql:
+    container_name: mysql
+    image: debezium/example-mysql:0.10
+    ports:
+      - "3306:3306"
+    environment:
+      - "MYSQL_ROOT_PASSWORD=debezium"
+      - "MYSQL_USER=mysqluser"
+      - "MYSQL_PASSWORD=mysqlpw"
+
+  # --- DEBEZIUM -------------------------------------------------------------------------------------------------------
+
   zookeeper:
     container_name: zookeeper
-    image: debezium/zookeeper
+    image: debezium/zookeeper:0.10
     ports:
-    - "2181:2181"
-    - "2888:2888"
-    - "3888:3888"
+      - "2181:2181"
+      - "2888:2888"
+      - "3888:3888"
 
   kafka:
     container_name: kafka
-    image: wurstmeister/kafka
+    image: wurstmeister/kafka:2.12-2.3.0
     ports:
-    - "9093:9093"
+      - "9093:9093"
     environment:
-    - "KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181"
-    - "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT"
-    - "KAFKA_LISTENERS=INSIDE://:9092,OUTSIDE://:9093"
-    - "KAFKA_ADVERTISED_LISTENERS=INSIDE://:9092,OUTSIDE://localhost:9093"
-    - "KAFKA_INTER_BROKER_LISTENER_NAME=INSIDE"
+      - "KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181"
+      - "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT"
+      - "KAFKA_LISTENERS=INSIDE://:9092,OUTSIDE://:9093"
+      - "KAFKA_ADVERTISED_LISTENERS=INSIDE://:9092,OUTSIDE://localhost:9093"
+      - "KAFKA_INTER_BROKER_LISTENER_NAME=INSIDE"
     volumes:
-    - /var/run/docker.sock:/var/run/docker.sock
-
-  redis:
-    container_name: redis
-    image: redis:alpine
-    command: redis-server --appendonly yes --appendfsync always
-    ports:
-    - "6379:6379"
+      - /var/run/docker.sock:/var/run/docker.sock
 
   debezium:
     container_name: debezium
-    image: debezium/connect
+    image: debezium/connect:0.10
     ports:
-    - "8083:8083"
+      - "8083:8083"
     environment:
-    - "BOOTSTRAP_SERVERS=kafka:9092"
-    - "GROUP_ID=debezium-dbserver1.inventory"
-    - "CONFIG_STORAGE_TOPIC=debezium_connect_configs-dbserver1.inventory"
-    - "OFFSET_STORAGE_TOPIC=debezium_connect_offsets-dbserver1.inventory"
-    - "STATUS_STORAGE_TOPIC=debezium_connect_statuses-dbserver1.inventory"
+      - "BOOTSTRAP_SERVERS=kafka:9092"
+      - "GROUP_ID=debezium-dbserver1.inventory"
+      - "CONFIG_STORAGE_TOPIC=debezium_connect_configs-dbserver1.inventory"
+      - "OFFSET_STORAGE_TOPIC=debezium_connect_offsets-dbserver1.inventory"
+      - "STATUS_STORAGE_TOPIC=debezium_connect_statuses-dbserver1.inventory"
+
+  # --- PRECEDENCE -----------------------------------------------------------------------------------------------------
+
+  redis:
+    container_name: redis
+    image: redis:5.0.6-alpine
+    command: redis-server --appendonly yes --appendfsync always
+    ports:
+      - "6379:6379"
 
   precedence:
     container_name: precedence
     image: inblocks/precedence
     command: --redis redis:6379
     ports:
-    - "9000:9000"
+      - "9000:9000"
+    environment:
+      - "PRECEDENCE_PRIVATE_KEY=5962a8486b88c88d14e16a18fd1bbc0207603d84f9cd6434b477baa88da40200"
 
   precedence-debezium:
     container_name: precedence-debezium
     image: inblocks/precedence-debezium
     environment:
-    - "PRECEDENCE_API=http://precedence:9000"
-    - "PRECEDENCE_APPLICATION_ID=precedence-dbserver1-inventory"
-    - "PRECEDENCE_BOOTSTRAP_SERVERS=kafka:9092"
-    - "PRECEDENCE_INPUT_TOPIC_PATTERN=dbserver1\\.inventory\\..*"
-    - "PRECEDENCE_STORE=true"
-
-  init:
-    container_name: init
-    image: docker
-    command: /init.sh
-    tty: true
-    volumes:
-    - "/var/run/docker.sock:/var/run/docker.sock"
-    - "$PWD/${PRECEDENCE_DEBEZIUM_CONFIG}:/config.json"
-    - "$PWD/docker-compose.init.sh:/init.sh"
+      - "PRECEDENCE_API=http://precedence:9000"
+      - "PRECEDENCE_APPLICATION_ID=precedence-demo-inventory"
+      - "PRECEDENCE_BOOTSTRAP_SERVERS=kafka:9092"
+      - "PRECEDENCE_INPUT_TOPIC_PATTERN=^demo\\.inventory\\..*"
+      - "PRECEDENCE_STORE=true"

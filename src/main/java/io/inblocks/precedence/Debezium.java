@@ -4,10 +4,13 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.KafkaAdminClient;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
+import org.apache.kafka.streams.Topology;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,50 +23,17 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Properties;
+import java.util.*;
+import java.util.concurrent.ExecutionException;
 import java.util.regex.Pattern;
 
 public class Debezium {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(Debezium.class);
-    private static final JsonParser JSON_PARSER = new JsonParser();
+    private static final long REFRESH_TOPICS_PERIOD = 1000 * 60;
     private static final String NAME_SUFFIX = "Key";
 
-    private static String sha256(byte[] data) {
-        try {
-            MessageDigest messageDigest = MessageDigest.getInstance("SHA-256");
-            messageDigest.update(data);
-            byte[] digest = messageDigest.digest();
-            return DatatypeConverter.printHexBinary(digest).toLowerCase();
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private static JsonObject inputStreamToJson(InputStream inputStream) {
-        return JSON_PARSER.parse(new BufferedReader(new InputStreamReader(inputStream))).getAsJsonObject();
-    }
-
-    private static Response post(String baseUrl, String id, String chain, JsonElement data, boolean store) throws Exception {
-        byte[] bytes = data.toString().getBytes();
-        String url = baseUrl + "/records?id=" + id +
-                "&store=" + store +
-                "&hash=" + sha256(bytes) +
-                "&chain=" + URLEncoder.encode(chain, "utf-8");
-        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
-        connection.setRequestMethod("POST");
-        connection.setRequestProperty("content-type", "application/octet-stream");
-        connection.setDoOutput(true);
-        connection.getOutputStream().write(bytes);
-        connection.connect();
-        JsonObject responseBody;
-        try {
-            responseBody = inputStreamToJson(connection.getInputStream());
-        } catch (Exception e1) {
-            responseBody = inputStreamToJson(connection.getErrorStream());
-        }
-        return new Response(url, connection.getResponseCode(), responseBody);
-    }
+    private static KafkaStreams streams = null;
 
     public static void main(String[] args) {
         String api = System.getenv("PRECEDENCE_API");
@@ -87,10 +57,63 @@ public class Debezium {
                 "\tPRECEDENCE_INPUT_TOPIC_PATTERN: " + inputTopicRegex + "\n" +
                 "\tPRECEDENCE_STORE: " + store + "\n");
 
+        Properties properties = new Properties();
+        properties.put(StreamsConfig.APPLICATION_ID_CONFIG, applicationId);
+        properties.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        properties.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass());
+        properties.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
+
+        Timer timer = new Timer();
+        timer.schedule(new TimerTask() {
+
+            Pattern inputTopicPattern = Pattern.compile(inputTopicRegex);
+            AdminClient client = KafkaAdminClient.create(properties);
+            Set<String> topics = new HashSet<>();
+
+            @Override
+            public void run() {
+                try {
+                    client.listTopics().names().get().stream()
+                            .filter(topic -> !topics.contains(topic) && inputTopicPattern.matcher(topic).matches())
+                            .forEach(topic -> {
+                                topics.add(topic);
+                                if (streams != null) {
+                                    streams.close();
+                                    streams = null;
+                                }
+                            });
+                } catch (InterruptedException e) {
+                    return;
+                } catch (ExecutionException e) {
+                    System.exit(1);
+                }
+                if (streams != null || topics.size() == 0) {
+                    return;
+                }
+                Topology topology = buildTopology(topics, api, store);
+                streams = new KafkaStreams(topology, properties);
+                try {
+                    streams.start();
+                } catch (Throwable e) {
+                    System.exit(1);
+                }
+            }
+        }, 0, REFRESH_TOPICS_PERIOD);
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            timer.cancel();
+            if (streams != null) {
+                streams.close();
+            }
+            Runtime.getRuntime().halt(0);
+        }));
+    }
+
+    private static Topology buildTopology(Collection<String> topics, String api, boolean store) {
         StreamsBuilder streamsBuilder = new StreamsBuilder();
-        streamsBuilder.stream(Pattern.compile(inputTopicRegex)).filter((key, value) -> value != null).foreach((key, value) -> {
+        streamsBuilder.stream(topics).filter((key, value) -> value != null).foreach((key, value) -> {
             // key
-            JsonObject keyJson = JSON_PARSER.parse(key.toString()).getAsJsonObject();
+            JsonObject keyJson = JsonParser.parseString(key.toString()).getAsJsonObject();
             String name = keyJson.getAsJsonObject("schema").get("name").getAsString();
             JsonObject payload = keyJson.getAsJsonObject("payload");
             JsonObject sortedPayload = new JsonObject();
@@ -100,7 +123,7 @@ public class Debezium {
             }
             // value
             String stringValue = value.toString();
-            JsonElement after = JSON_PARSER.parse(stringValue).getAsJsonObject().getAsJsonObject("payload").get("after");
+            JsonElement after = JsonParser.parseString(stringValue).getAsJsonObject().getAsJsonObject("payload").get("after");
 
             String id = sha256(stringValue.getBytes());
             String chain = name.substring(0, name.length() - NAME_SUFFIX.length()) + sortedPayload.toString();
@@ -134,23 +157,43 @@ public class Debezium {
                 }
             }
         });
+        return streamsBuilder.build();
+    }
 
-        Properties properties = new Properties();
-        properties.put(StreamsConfig.APPLICATION_ID_CONFIG, applicationId);
-        properties.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        properties.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass());
-        properties.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
-
-        KafkaStreams streams = new KafkaStreams(streamsBuilder.build(), properties);
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            streams.close();
-            Runtime.getRuntime().halt(0);
-        }));
+    private static String sha256(byte[] data) {
         try {
-            streams.start();
-        } catch (Throwable e) {
-            System.exit(1);
+            MessageDigest messageDigest = MessageDigest.getInstance("SHA-256");
+            messageDigest.update(data);
+            byte[] digest = messageDigest.digest();
+            return DatatypeConverter.printHexBinary(digest).toLowerCase();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
         }
+    }
+
+    private static Response post(String baseUrl, String id, String chain, JsonElement data, boolean store) throws Exception {
+        byte[] bytes = data.toString().getBytes();
+        String url = baseUrl + "/records?id=" + id +
+                "&store=" + store +
+                "&hash=" + sha256(bytes) +
+                "&chain=" + URLEncoder.encode(chain, "utf-8");
+        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        connection.setRequestMethod("POST");
+        connection.setRequestProperty("content-type", "application/octet-stream");
+        connection.setDoOutput(true);
+        connection.getOutputStream().write(bytes);
+        connection.connect();
+        JsonObject responseBody;
+        try {
+            responseBody = inputStreamToJson(connection.getInputStream());
+        } catch (Exception e1) {
+            responseBody = inputStreamToJson(connection.getErrorStream());
+        }
+        return new Response(url, connection.getResponseCode(), responseBody);
+    }
+
+    private static JsonObject inputStreamToJson(InputStream inputStream) {
+        return JsonParser.parseReader(new BufferedReader(new InputStreamReader(inputStream))).getAsJsonObject();
     }
 
     public static class Response {
