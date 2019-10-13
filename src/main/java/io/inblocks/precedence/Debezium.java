@@ -25,6 +25,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 
 public class Debezium {
@@ -67,13 +69,16 @@ public class Debezium {
         timer.schedule(new TimerTask() {
 
             Pattern inputTopicPattern = Pattern.compile(inputTopicRegex);
-            AdminClient client = KafkaAdminClient.create(properties);
+            AdminClient client = null;
             Set<String> topics = new HashSet<>();
 
             @Override
             public void run() {
+                if (client == null) {
+                    client = KafkaAdminClient.create(properties);
+                }
                 try {
-                    client.listTopics().names().get().stream()
+                    client.listTopics().names().get(10, TimeUnit.SECONDS).stream()
                             .filter(topic -> !topics.contains(topic) && inputTopicPattern.matcher(topic).matches())
                             .forEach(topic -> {
                                 topics.add(topic);
@@ -84,18 +89,20 @@ public class Debezium {
                             });
                 } catch (InterruptedException e) {
                     return;
-                } catch (ExecutionException e) {
-                    System.exit(1);
+                } catch (ExecutionException | TimeoutException e) {
+                    e.printStackTrace();
+                    client = null;
+                    topics.clear();
                 }
-                if (streams != null || topics.size() == 0) {
-                    return;
-                }
-                Topology topology = buildTopology(topics, api, store);
-                streams = new KafkaStreams(topology, properties);
-                try {
-                    streams.start();
-                } catch (Throwable e) {
-                    System.exit(1);
+                if (streams == null && topics.size() > 0) {
+                    Topology topology = buildTopology(topics, api, store);
+                    streams = new KafkaStreams(topology, properties);
+                    try {
+                        streams.start();
+                    } catch (Throwable e) {
+                        e.printStackTrace();
+                        streams = null;
+                    }
                 }
             }
         }, 0, REFRESH_TOPICS_PERIOD);
