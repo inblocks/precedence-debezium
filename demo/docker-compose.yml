@@ -20,6 +20,8 @@ services:
       - "MYSQL_ROOT_PASSWORD=debezium"
       - "MYSQL_USER=mysqluser"
       - "MYSQL_PASSWORD=mysqlpw"
+    volumes:
+      - "$PWD/mysql/gtid.cnf:/etc/mysql/conf.d/gtid.conf"
 
   # --- DEBEZIUM -------------------------------------------------------------------------------------------------------
 
