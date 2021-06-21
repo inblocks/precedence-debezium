@@ -70,7 +70,7 @@ The data isn't here because the last modification is a delete. We can retrieve t
 
 ```bash
 previous=$(curl -sS "$api/chains/demo.inventory.customers.%7B%22id%22%3A1005%7D" | sed -En 's/.*"previous":\["([^"]*).*/\1/p')
-curl -sS "$api/records/$previous" | sed -En 's/.*"data":"([^"]*).*/\1/p' | base64 -D
+curl -sS "$api/records/$previous?data=true"
 ```
 
 You can recreate some containers, wait for initialisation and verify by yourself that all is in the same state because we don't touch the containers which contains data.
@@ -116,7 +116,7 @@ docker exec kafka bash -c '$KAFKA_HOME/bin/kafka-console-consumer.sh \
     --bootstrap-server kafka:9093 \
     --property print.key=true \
     --property key.separator="         " \
-    --whitelist '^demo\.inventory\..*' \
+    --whitelist "^demo\.inventory\..*" \
     --from-beginning'
 
 # reset precedence-demo-inventory kafka offsets

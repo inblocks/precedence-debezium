@@ -13,7 +13,7 @@ services:
 
   mysql:
     container_name: mysql
-    image: debezium/example-mysql:0.10
+    image: debezium/example-mysql:1.5
     ports:
       - "3306:3306"
     environment:
@@ -25,7 +25,7 @@ services:
 
   zookeeper:
     container_name: zookeeper
-    image: debezium/zookeeper:0.10
+    image: debezium/zookeeper:1.5
     ports:
       - "2181:2181"
       - "2888:2888"
@@ -47,7 +47,7 @@ services:
 
   debezium:
     container_name: debezium
-    image: debezium/connect:0.10
+    image: debezium/connect:1.5
     ports:
       - "8083:8083"
     environment:

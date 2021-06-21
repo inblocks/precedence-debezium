@@ -11,6 +11,7 @@
     "database.server.name": "demo",
     "database.whitelist": "inventory",
     "database.history.kafka.bootstrap.servers": "kafka:9092",
-    "database.history.kafka.topic": "schema-changes.demo-inventory"
+    "database.history.kafka.topic": "schema-changes.demo-inventory",
+    "provide.transaction.metadata": true
   }
 }
