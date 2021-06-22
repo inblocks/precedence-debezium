@@ -129,7 +129,7 @@ public class Debezium {
             JsonObject sortedPayload = new JsonObject();
             payload.keySet().stream().sorted().forEach(s -> sortedPayload.add(s, payload.get(s)));
             if (!name.endsWith(NAME_SUFFIX)) {
-                throw new RuntimeException("");
+                throw new RuntimeException("Unexpected schema name suffix: " + name);
             }
             // value
             String stringValue = value.toString();
