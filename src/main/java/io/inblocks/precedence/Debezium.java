@@ -1,7 +1,6 @@
 package io.inblocks.precedence;
 
 import com.google.gson.JsonElement;
-import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -130,11 +129,11 @@ public class Debezium {
             }
             // value
             String stringValue = value.toString();
-            JsonElement after = JsonParser.parseString(stringValue).getAsJsonObject().getAsJsonObject("payload").get("after");
+            JsonObject valuePayload = JsonParser.parseString(stringValue).getAsJsonObject().getAsJsonObject("payload");
+            JsonObject data = getPrecedencePayload(valuePayload);
 
             String id = sha256(stringValue.getBytes());
             String chain = name.substring(0, name.length() - NAME_SUFFIX.length()) + sortedPayload.toString();
-            JsonElement data = after.isJsonNull() ? JsonNull.INSTANCE : after;
             while (true) {
                 try {
                     Response response = post(api, id, chain, data, store);
@@ -165,6 +164,23 @@ public class Debezium {
             }
         });
         return streamsBuilder.build();
+    }
+
+    private static JsonObject getPrecedencePayload(JsonObject valuePayload) {
+        JsonObject data = new JsonObject();
+        for (java.util.Map.Entry<String, JsonElement> keyValue : valuePayload.entrySet()) {
+            switch (keyValue.getKey()) {
+                case "before":
+                    break;
+                case "after":
+                    JsonElement after = keyValue.getValue();
+                    data.add("record_value", after);
+                    break;
+                default:
+                    data.add(keyValue.getKey(), keyValue.getValue());
+            }
+        }
+        return data;
     }
 
     private static String sha256(byte[] data) {
