@@ -69,10 +69,10 @@ public class Debezium {
         Timer timer = new Timer();
         timer.schedule(new TimerTask() {
 
-            Pattern inputTopicPattern = Pattern.compile(inputTopicRegex);
-            Pattern inputTopicExcludePattern = inputTopicExcludeRegex == null ? null : Pattern.compile(inputTopicExcludeRegex);
+            final Pattern inputTopicPattern = Pattern.compile(inputTopicRegex);
+            final Pattern inputTopicExcludePattern = inputTopicExcludeRegex == null ? null : Pattern.compile(inputTopicExcludeRegex);
             AdminClient client = null;
-            Set<String> topics = new HashSet<>();
+            final Set<String> topics = new HashSet<>();
 
             @Override
             public void run() {
@@ -137,7 +137,7 @@ public class Debezium {
             JsonObject data = getPrecedencePayload(valuePayload);
 
             String id = sha256(stringValue.getBytes());
-            String chain = name.substring(0, name.length() - NAME_SUFFIX.length()) + sortedPayload.toString();
+            String chain = name.substring(0, name.length() - NAME_SUFFIX.length()) + sortedPayload;
             while (true) {
                 try {
                     Response response = post(api, id, chain, data, store);
@@ -156,11 +156,12 @@ public class Debezium {
                                 chain));
                         break;
                     }
-                    LOGGER.warn(String.format("id:?(%s) chain:%s\n%s\n%s", id, chain, key.toString(), response));
+                    LOGGER.warn(String.format("id:?(%s) chain:%s\n%s\n%s", id, chain, key, response));
                 } catch (Exception e) {
-                    LOGGER.error(e.getMessage(), key.toString());
+                    LOGGER.error(e.getMessage(), key);
                 }
                 try {
+                    //noinspection BusyWait
                     Thread.sleep(1000);
                 } catch (InterruptedException e) {
                     LOGGER.info(e.getMessage());
