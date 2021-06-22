@@ -1,8 +1,6 @@
 package io.inblocks.precedence;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import com.google.gson.*;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.KafkaAdminClient;
 import org.apache.kafka.common.serialization.Serdes;
@@ -172,31 +170,40 @@ public class Debezium {
     }
 
     private static JsonObject getPrecedencePayload(JsonObject valuePayload) {
+        // LOGGER.info("Beginning of getPrecedencePayload: " + valuePayload);
         JsonObject data = new JsonObject();
-        for (java.util.Map.Entry<String, JsonElement> keyValue : valuePayload.entrySet()) {
-            switch (keyValue.getKey()) {
-                case "before":
-                    break;
+        for (Map.Entry<String, JsonElement> kv : valuePayload.entrySet()) {
+            switch (kv.getKey()) {
                 case "after":
-                    JsonElement after = keyValue.getValue();
-                    data.add("record_value", after);
+                    // rename
+                    data.add("record_value", kv.getValue());
                     break;
+                case "transaction":
+                    // copy
+                    data.add(kv.getKey(), kv.getValue());
                 default:
-                    data.add(keyValue.getKey(), keyValue.getValue());
+                    // drop
+                    break;
             }
         }
+        // LOGGER.info("End of getPrecedencePayload: " + data);
         return data;
     }
 
+    static MessageDigest messageDigest = null;
+
     private static String sha256(byte[] data) {
-        try {
-            MessageDigest messageDigest = MessageDigest.getInstance("SHA-256");
-            messageDigest.update(data);
-            byte[] digest = messageDigest.digest();
-            return DatatypeConverter.printHexBinary(digest).toLowerCase();
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
+        if (messageDigest == null) {
+            try {
+                messageDigest = MessageDigest.getInstance("SHA-256");
+            } catch (NoSuchAlgorithmException e) {
+                throw new RuntimeException(e);
+            }
         }
+        messageDigest.update(data);
+        byte[] digest = messageDigest.digest();
+        messageDigest.reset();
+        return DatatypeConverter.printHexBinary(digest).toLowerCase();
     }
 
     private static Response post(String baseUrl, String id, String chain, JsonElement data, boolean store) throws Exception {
