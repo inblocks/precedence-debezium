@@ -41,6 +41,7 @@ public class Debezium {
         String applicationId = System.getenv("PRECEDENCE_APPLICATION_ID");
         String bootstrapServers = System.getenv("PRECEDENCE_BOOTSTRAP_SERVERS");
         String inputTopicRegex = System.getenv("PRECEDENCE_INPUT_TOPIC_PATTERN");
+        String inputTopicExcludeRegex = System.getenv("PRECEDENCE_INPUT_TOPIC_EXCLUDE_PATTERN");
         boolean store = "true".equals(System.getenv("PRECEDENCE_STORE"));
         if (bootstrapServers == null || applicationId == null || inputTopicRegex == null || api == null) {
             System.err.println("The following environment variables must be defined:\n" +
@@ -56,6 +57,7 @@ public class Debezium {
                 "\tPRECEDENCE_APPLICATION_ID: " + applicationId + "\n" +
                 "\tPRECEDENCE_BOOTSTRAP_SERVERS: " + bootstrapServers + "\n" +
                 "\tPRECEDENCE_INPUT_TOPIC_PATTERN: " + inputTopicRegex + "\n" +
+                "\tPRECEDENCE_INPUT_TOPIC_EXCLUDE_PATTERN: " + inputTopicExcludeRegex + "\n" +
                 "\tPRECEDENCE_STORE: " + store + "\n");
 
         Properties properties = new Properties();
@@ -68,6 +70,7 @@ public class Debezium {
         timer.schedule(new TimerTask() {
 
             Pattern inputTopicPattern = Pattern.compile(inputTopicRegex);
+            Pattern inputTopicExcludePattern = inputTopicExcludeRegex == null ? null : Pattern.compile(inputTopicExcludeRegex);
             AdminClient client = null;
             Set<String> topics = new HashSet<>();
 
@@ -78,7 +81,8 @@ public class Debezium {
                 }
                 try {
                     client.listTopics().names().get(10, TimeUnit.SECONDS).stream()
-                            .filter(topic -> !topics.contains(topic) && inputTopicPattern.matcher(topic).matches())
+                            .filter(topic -> !topics.contains(topic) && inputTopicPattern.matcher(topic).matches()
+                                && (inputTopicExcludeRegex == null || !inputTopicExcludePattern.matcher(topic).matches()))
                             .forEach(topic -> {
                                 topics.add(topic);
                                 if (streams != null) {
